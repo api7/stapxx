@@ -66,6 +66,7 @@ $*pt := @cast(pt, "GCproto", "$^libluajit_path")
 @define sizeof_ptr %( &@cast(0, "global_State", "$^libluajit_path")->strmask %)
 @define sizeof_GCcdataVar %( &@cast(0, "GCcdataVar", "$^libluajit_path")[1] %)
 @define sizeof_BCIns %( &@cast(0, "BCIns", "$^libluajit_path")[1] %)
+@define sizeof_BCPos %( &@cast(0, "BCPos", "$^libluajit_path")[1] %)
 
 @define strdata(s) %(
     (@s + @sizeof_GCstr)
@@ -150,7 +151,7 @@ $*pt := @cast(pt, "GCproto", "$^libluajit_path")
 %)
 
 @define proto_bcpos(pt, pc) %(
-    ((@pc - @proto_bc(@pt)) / @sizeof_TValue)
+    ((@pc - @proto_bc(@pt)) / @sizeof_BCPos)
 %)
 
 @define proto_lineinfo(pt) %(
