@@ -1,0 +1,131 @@
+#!/usr/bin/env stap++
+
+@use nginx.lua
+@use luajit
+
+global ptr2bt
+global ptr2size
+global bt_stats
+global sum
+global alloc_cnt = 0
+global quit = 0
+global gc_size_begin = 0
+global gc_size_end = 0
+
+function get_bt()
+{
+    if (@defined(@var("globalL", "$^exec_path"))) {
+        mL = @var("globalL", "$^exec_path")
+
+    } else {
+        mL = ngx_lua_get_main_lua_vm()
+    }
+
+    g = luajit_G(mL)
+    L = luajit_cur_thread(g)
+
+    return luajit_backtrace(L, g, $^arg_detailed :default(0) ? 0 : 1)
+}
+
+function get_gc_size()
+{
+    if (@defined(@var("globalL", "$^exec_path"))) {
+        mL = @var("globalL", "$^exec_path")
+
+    } else {
+        mL = ngx_lua_get_main_lua_vm()
+    }
+
+    G = luajit_G(mL)
+    $*G := @cast(G, "global_State", "$^libluajit_path")
+    return $*G->gc->total
+}
+
+function report()
+{
+    foreach (bt in bt_stats) {
+        sum[bt] = @sum(bt_stats[bt])
+    }
+    foreach (bt in sum- limit $^arg_limit :default(5)) {
+        print_ustack(bt)
+        printf("\ttotal %d bytes\n", sum[bt])
+    }
+    delete ptr2bt
+    delete ptr2size
+    delete bt_stats
+    delete sum
+    alloc_cnt = 0
+    printf("-------\n")
+}
+
+probe begin
+{
+    warn(sprintf("Start tracing %d ($^exec_path)...", target()))
+    %( "$^arg_time" != ""  %?
+    warn(sprintf("Please wait for $^arg_time seconds...\n"))
+    %:
+    warn("Hit Ctrl-C to end.\n")
+    %)
+}
+
+probe end
+{
+    report()
+    printf("\nGC size change: %d -> %d bytes\n", gc_size_begin, gc_size_end)
+}
+
+probe process("$^libluajit_path").function("lj_alloc_realloc").return,
+      process("$^libluajit_path").function("lj_alloc_malloc").return
+{
+    if (gc_size_begin == 0) {
+        gc_size_begin = get_gc_size()
+    }
+
+    gc_size_end = get_gc_size()
+
+    if (tid() == target() && !quit) {
+        ptr = returnval()
+        bt = get_bt()
+        if (ptr && bt != "") {
+            if (alloc_cnt >= 100000) {
+                report()
+            }
+
+            if (ptr2bt[ptr] == "") {
+                alloc_cnt++
+            }
+
+            size = @entry($nsize)
+            ptr2bt[ptr] = bt
+            ptr2size[ptr] = size
+            bt_stats[bt] <<< size
+        }
+    }
+}
+
+probe process("$^libluajit_path").function("lj_alloc_free")
+{
+    ptr = pointer_arg(2)
+    if (tid() == target() && ptr && !quit) {
+        bt = ptr2bt[ptr]
+        delete ptr2bt[ptr]
+
+        bytes = ptr2size[ptr]
+        delete ptr2size[ptr]
+
+        if (bt != "") {
+            alloc_cnt--
+            bt_stats[bt] <<< -bytes
+            if (@sum(bt_stats[bt]) == 0) {
+                delete bt_stats[bt]
+            }
+        }
+    }
+}
+
+probe timer.s($^arg_time)
+{
+    quit = 1
+    printf("exit...\n")
+    exit()
+}
