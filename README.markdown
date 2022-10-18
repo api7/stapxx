@@ -1891,7 +1891,7 @@ you could turn to use `sample-bt-leaks.sxx` to check possible memory leak outsid
 Because the memory leak involves a lot of allocation, to avoid memory overflow of statistics array,
 it would print report and restart collection each time when the number of allocations not freed exceeds `100000`.
 
-Here is an example from my [blog post](http://luajit.io/post/2022/analyze-lua-memory-leak-with-systemtap/):
+Here is an example from one [apisix issue](https://github.com/apache/apisix/issues/7949):
 
 ```
 # making the ./stap++ tool visible in PATH:
