@@ -58,6 +58,7 @@ Table of Contents
     * [ngx-pcre-top](#ngx-pcre-top)
     * [vfs-page-cache-misses](#vfs-page-cache-misses)
     * [openssl-handshake-diagnosis](#openssl-handshake-diagnosis)
+    * [lua-leak](#lua-leak)
 * [Installation](#installation)
 * [Author](#author)
 * [Copyright and License](#copyright-and-license)
@@ -1875,6 +1876,57 @@ cipher usage:
     AES128-GCM-SHA256                   90
     ECDHE-RSA-AES128-GCM-SHA256         72
     ECDHE-RSA-AES256-GCM-SHA384         71
+```
+
+[Back to TOC](#table-of-contents)
+
+lua-leak
+---------------------------
+This script collects all memory not freed during the tracing period and corresponding backtraces,
+which supports both compiled code and interpretered lua code.
+
+Note that it could not check memory allocated via ffi call. If lua code is clean,
+you could turn to use `sample-bt-leaks.sxx` to check possible memory leak outside lua code.
+
+Because the memory leak involves a lot of allocation, to avoid memory overflow of statistics array,
+it would print report and restart collection each time when the number of allocations not freed exceeds `100000`.
+
+Here is an example from one [apisix issue](https://github.com/apache/apisix/issues/7949#issuecomment-1277311643):
+
+```
+# making the ./stap++ tool visible in PATH:
+$ export PATH=$PWD:$PATH
+
+$ ./samples/lua-leaks.sxx -D STP_NO_OVERLOAD -D MAXMAPENTRIES=150000 -D MAXACTION=10000 --skip-badvars -arg time=60 -x 91107
+ T:@/opt/apisix//deps/share/lua/5.1/prometheus.lua:346
+@/opt/apisix//deps/share/lua/5.1/prometheus.lua:346
+@/opt/apisix//deps/share/lua/5.1/prometheus.lua:540
+@/opt/apisix/apisix/plugins/prometheus/exporter.lua:210
+@/opt/apisix/apisix/plugin.lua:884
+@/opt/apisix/apisix/plugin.lua:961
+@/opt/apisix/apisix/init.lua:314
+@/opt/apisix/apisix/init.lua:725
+=log_by_lua(nginx.conf:410):0
+ : 0x0
+        total 544320 bytes
+ C:json_decode
+C:json_protect_conversion
+@/opt/apisix//deps/share/lua/5.1/resty/etcd/v3.lua:770
+@/opt/apisix/apisix/core/config_etcd.lua:123
+@/opt/apisix/apisix/core/config_etcd.lua:298
+@/opt/apisix/apisix/core/config_etcd.lua:538
+builtin#22
+@/opt/apisix/apisix/core/config_etcd.lua:516
+ : 0xc
+        total 358888 bytes
+ builtin#177
+=coroutine_api:7
+@/opt/apisix//deps/share/lua/5.1/resty/http.lua:495
+ : 0xb
+        total 323136 bytes
+-------
+
+GC size change: 30108709 -> 22416845 bytes
 ```
 
 [Back to TOC](#table-of-contents)
